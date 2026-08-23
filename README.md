@@ -7,6 +7,7 @@ A modern RESTful web service built with **Spring Boot 3** and **AWS SDK for Java
 ## 🚀 Features
 
 - **AWS SDK v2 Enhanced Client**: Object-oriented mapping between Java entity models and DynamoDB items.
+- **Dual Environment Support**: Easily switch between **Local Docker DynamoDB** (`http://localhost:8000`) and **AWS Cloud DynamoDB**.
 - **Automated & Manual Table Provisioning**: Supports both programmatic table creation on startup with `DynamoDbWaiter` and pre-created AWS tables.
 - **RESTful API**: Full CRUD endpoints (`CREATE`, `READ`, `UPDATE`, `DELETE`).
 - **Global Exception Handling**: Centralized handling of custom exceptions using `@ControllerAdvice`.
@@ -29,7 +30,8 @@ A modern RESTful web service built with **Spring Boot 3** and **AWS SDK for Java
 Before running the application, ensure you have:
 
 1. **Java 17+** and **Maven** installed.
-2. **AWS Credentials** configured on your local machine via AWS CLI:
+2. **Docker** installed (if running DynamoDB locally).
+3. **AWS Credentials** configured on your local machine via AWS CLI (if running against AWS Cloud):
    ```bash
    aws configure
    ```
@@ -37,7 +39,7 @@ Before running the application, ensure you have:
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Configuration & Environment Switching
 
 Application settings are managed in `src/main/resources/application.properties`:
 
@@ -46,30 +48,70 @@ spring.application.name=spring-dynamodb-implementation
 
 # AWS DynamoDB Configuration
 aws.region=ap-south-1
+aws.dynamodb.tableName=User
+
+# Local DynamoDB (Docker) Endpoint Override
+# Uncomment the line below to connect to local DynamoDB in Docker on port 8000:
+# aws.endpoint=http://localhost:8000
 ```
 
-> 💡 **Note**: To connect to a local instance (e.g. DynamoDB Local in Docker on port 8000), add `aws.endpoint=http://localhost:8000`.
+### 1. Running Against Local DynamoDB (Docker)
+1. Start the DynamoDB Local Docker container on port `8000`:
+   ```bash
+   docker run -p 8000:8000 amazon/dynamodb-local
+   ```
+2. In `application.properties`, uncomment:
+   ```properties
+   aws.endpoint=http://localhost:8000
+   ```
+
+### 2. Running Against AWS Cloud DynamoDB
+1. Leave `aws.endpoint` commented out or empty in `application.properties`.
+2. The AWS SDK will automatically route requests to `dynamodb.ap-south-1.amazonaws.com` using your local AWS CLI credentials.
 
 ---
 
-## 🗄️ DynamoDB Table Provisioning Options
+## 💻 Key Code Snippets & Architecture Reference
 
-There are two primary approaches to managing your DynamoDB tables in this application:
+### 1. Endpoint Override in `DynamoDbConfig.java`
+Allows seamless switching between Docker (`http://localhost:8000`) and AWS Cloud:
 
-### Option A: Manual Table Creation (AWS Console / Terraform / CLI)
-In production environments, tables are typically managed via Infrastructure as Code (IaC) or the AWS Console.
+```java
+@Configuration
+public class DynamoDbConfig {
 
-- **AWS Console Steps**:
-  1. Open AWS DynamoDB Console (Region: `ap-south-1`).
-  2. Click **Create table**.
-  3. **Table Name**: `User`
-  4. **Partition Key**: `id` (String)
-  5. Select **On-Demand** or **Provisioned** capacity and click **Create table**.
+    @Value("${aws.region:ap-south-1}")
+    private String region;
 
-### Option B: Programmatic Initialization with `@PostConstruct` & `DynamoDbWaiter`
-For local development or integration testing, the application can create the table automatically on startup using AWS SDK v2 Enhanced Client.
+    @Value("${aws.endpoint:}")
+    private String endpoint;
 
-#### Implementation in `UserRepository.java`:
+    @Bean
+    public DynamoDbClient dynamoDbClient() {
+        DynamoDbClientBuilder builder = DynamoDbClient.builder()
+                .region(Region.of(region))
+                .credentialsProvider(DefaultCredentialsProvider.create());
+
+        // Optional endpoint override for Local Testing with Docker (http://localhost:8000)
+        if (endpoint != null && !endpoint.isBlank()) {
+            builder.endpointOverride(URI.create(endpoint));
+        }
+
+        return builder.build();
+    }
+
+    @Bean
+    public DynamoDbEnhancedClient dynamoDbEnhancedClient(DynamoDbClient dynamoDbClient) {
+        return DynamoDbEnhancedClient.builder()
+                .dynamoDbClient(dynamoDbClient)
+                .build();
+    }
+}
+```
+
+---
+
+### 2. Table Provisioning with `DynamoDbWaiter` in `UserRepository.java`
 
 ```java
 @Repository
@@ -78,6 +120,13 @@ public class UserRepository {
     private DynamoDbTable<User> userTable;
     private final DynamoDbEnhancedClient enhancedClient;
     private final DynamoDbClient dynamoDbClient;
+
+    /* Alternative Constructor Injection pattern:
+    public UserRepository(DynamoDbEnhancedClient enhancedClient, 
+                          @Value("${aws.dynamodb.tableName:User}") String tableName) {
+        this.userTable = enhancedClient.table(tableName, TableSchema.fromBean(User.class));
+    }
+    */
 
     @PostConstruct
     public void init() {
@@ -98,6 +147,96 @@ public class UserRepository {
     // ...
 }
 ```
+
+---
+
+### 3. Alternative Pattern: Spring `@Profile` Configuration (`@Profile("local")` vs `@Profile("dev")`)
+
+An alternative clean pattern is using Spring's `@Profile` annotation to create environment-specific `DynamoDbEnhancedClient` beans based on the active profile (`local` vs `dev`/`prod`).
+
+#### How to Activate Profiles in `application.properties`:
+```properties
+# To activate the local profile:
+spring.profiles.active=local
+
+# To activate the dev profile:
+# spring.profiles.active=dev
+```
+*Or via command line*: `./mvnw spring-boot:run -Dspring-boot.run.profiles=local` or `-Dspring.profiles.active=dev`.
+
+#### Profile Configuration Class Reference (`DynamoDBEnhancedConfig.java`):
+
+```java
+package com.codesnippet.S3DemoApplication.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+
+@Configuration
+public class DynamoDBEnhancedConfig {
+
+    @Value("${cloud.aws.region.static}")
+    private String region;
+
+    // Active when spring.profiles.active=local
+    @Bean
+    @Profile("local")
+    public DynamoDbEnhancedClient dynamoDbEnhancedClientLocal(
+            @Value("${cloud.aws.credentials.access-key}") String accessKey,
+            @Value("${cloud.aws.credentials.secret-key}") String secretKey) {
+        
+        DynamoDbClient dynamoDbClient = DynamoDbClient.builder()
+                .region(Region.of(region))
+                .credentialsProvider(StaticCredentialsProvider.create(
+                        AwsBasicCredentials.create(accessKey, secretKey)
+                ))
+                .build();
+
+        return DynamoDbEnhancedClient.builder()
+                .dynamoDbClient(dynamoDbClient)
+                .build();
+    }
+
+    // Active when spring.profiles.active=dev (or prod)
+    @Bean
+    @Profile("dev")
+    public DynamoDbEnhancedClient dynamoDbEnhancedClientDev() {
+        DynamoDbClient dynamoDbClient = DynamoDbClient.builder()
+                .region(Region.of(region))
+                .credentialsProvider(DefaultCredentialsProvider.create())
+                .build();
+
+        return DynamoDbEnhancedClient.builder()
+                .dynamoDbClient(dynamoDbClient)
+                .build();
+    }
+}
+```
+
+---
+
+## 🗄️ DynamoDB Table Provisioning Options
+
+### Option A: Manual Table Creation (AWS Console / Terraform / CLI)
+In production environments, tables are typically managed via Infrastructure as Code (IaC) or the AWS Console.
+
+- **AWS Console Steps**:
+  1. Open AWS DynamoDB Console (Region: `ap-south-1`).
+  2. Click **Create table**.
+  3. **Table Name**: `User`
+  4. **Partition Key**: `id` (String)
+  5. Select **On-Demand** or **Provisioned** capacity and click **Create table**.
+
+### Option B: Programmatic Initialization with `@PostConstruct` & `DynamoDbWaiter`
+For local development or integration testing, the application can create the table automatically on startup using AWS SDK v2 Enhanced Client (detailed above).
 
 #### Why `DynamoDbWaiter` is Crucial
 - **Asynchronous Table Provisioning**: Calling `userTable.createTable()` is asynchronous in AWS Cloud. The API call returns immediately while AWS provisions the hardware in the background (~5–15 seconds).

@@ -1,5 +1,6 @@
 package com.example.spring_dynamodb_implementation.config;
 
+import java.net.URI;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,11 +17,19 @@ public class DynamoDbConfig {
     @Value("${aws.region:ap-south-1}")
     private String region;
 
+    @Value("${aws.endpoint:}")
+    private String endpoint;
+
     @Bean
     public DynamoDbClient dynamoDbClient() {
         DynamoDbClientBuilder builder = DynamoDbClient.builder()
                 .region(Region.of(region))
                 .credentialsProvider(DefaultCredentialsProvider.create());
+
+        // Optional endpoint override for Local Testing with Docker (http://localhost:8000)
+        if (endpoint != null && !endpoint.isBlank()) {
+            builder.endpointOverride(URI.create(endpoint));
+        }
 
         return builder.build();
     }
