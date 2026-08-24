@@ -11,7 +11,7 @@ A modern RESTful web service built with **Spring Boot 3** and **AWS SDK for Java
 - **Automated & Manual Table Provisioning**: Supports both programmatic table creation on startup with `DynamoDbWaiter` and pre-created AWS tables.
 - **RESTful API**: Full CRUD endpoints (`CREATE`, `READ`, `UPDATE`, `DELETE`).
 - **Global Exception Handling**: Centralized handling of custom exceptions using `@ControllerAdvice`.
-- **Default Credentials Chain**: Seamless authentication locally via `~/.aws/credentials` or on AWS infrastructure via IAM Roles.
+- **Default Credentials Chain**: Seamless authentication locally via `~/.aws/credentials` or on AWS infrastructure via IAM Roless.
 
 ---
 
