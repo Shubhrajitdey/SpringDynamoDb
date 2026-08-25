@@ -18,7 +18,7 @@ A modern RESTful web service built with **Spring Boot 3** and **AWS SDK for Java
 ## 🛠️ Tech Stack
 
 - **Java**: 17
-- **Framework**: Spring Boot 3.x
+- **Framework**: Spring Boot 3.xx
 - **AWS SDK**: AWS SDK for Java v2 (`dynamodb`, `dynamodb-enhanced`)
 - **Lombok**: Boilerplate code reduction
 - **Build Tool**: Maven
