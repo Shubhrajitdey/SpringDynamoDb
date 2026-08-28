@@ -1,4 +1,4 @@
-# Spring Boot DynamoDB Integration
+# Spring Boot DynamoDB Integrationn
 
 A modern RESTful web service built with **Spring Boot 3** and **AWS SDK for Java v2 (DynamoDB Enhanced Client)** to perform full CRUD operations against Amazon DynamoDB.
 
